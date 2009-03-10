@@ -31,11 +31,13 @@ end
 
 
 class APInfo
-  attr_reader :bssid, :essid, :channel
-  def initialize(bssid, essid, channel)
+  attr_reader :bssid, :essid, :channel, :beacons, :packets
+  def initialize(bssid, essid, channel, beacons, packets)
     @bssid = bssid
     @essid = essid
     @channel = channel
+    @beacons = beacons
+    @packets = packets
   end
 end
 
@@ -54,7 +56,7 @@ def select_wifi
   stdout = run_command('iwconfig')
   interfaces = []
   stdout.each_line do |line|
-    next if line.start_with?(' ') || line.strip.length == 0
+    next if line =~ /^\s/
     interfaces << line.split[0]
   end
   if interfaces.length == 0
@@ -69,15 +71,19 @@ def select_wifi
   end
 end
 
-def set_monitor_mode(wifi_id)
-  stdout = run_command("airmon-ng start #{wifi_id}")
+def set_monitor_mode(wifi_id, channel = nil)
+  cmd = "airmon-ng start #{wifi_id}"
+  cmd += " #{channel}" if channel
+  stdout = run_command(cmd)
   mon_regex =  /\(monitor mode enabled on (.+)\)$/
   if_regex = /(\S+).+\(monitor mode enabled\)$/
   stdout.each_line do |line|
     m = mon_regex.match(line)
     m = if_regex.match(line) unless m
     next unless m
-    puts "Monitor mode entabled on '#{m[1]}'"
+    print "Monitor mode entabled on '#{m[1]}'"
+    print " for channel #{channel}" if channel
+    puts
     return m[1]
   end
   puts "Error: could not set monitor mode"
@@ -98,8 +104,7 @@ def parse_aps(filename)
    items.each { |item| item.strip! }
    next if items.length < 14  # skip empty lines
    next unless isbssid?(items[0])
-   found_aps << APInfo.new(items[0], items[13], items[3])
-   #TODO: add also number of beacons and data packets
+   found_aps << APInfo.new(items[0], items[13], items[3], items[9], items[10])
   end
   f.close();
   found_aps
@@ -115,11 +120,12 @@ def select_access_point(monitor_interface)
   puts
   aplist = parse_aps('wcrb-01.txt')
   ct = 1
+  ap_descs = []
   aplist.each do |apinfo|
-    puts "#{ct}) ESSID: #{apinfo.essid}, BSSID: #{apinfo.bssid}, Channel: #{apinfo.channel}"
-    ct += 1
+    ap_descs << "#{apinfo.essid}: #{apinfo.beacons} beacons, #{apinfo.packets} packets"
   end
-  #TODO: read selection from user, return selected apinfo
+  puts "Select AP from list. More beacons usually means the AP is closer."
+  return aplist[select_from_list(ap_descs)]
 end
 
 
@@ -130,10 +136,10 @@ def main
   monitor_interface = set_monitor_mode(wifi_id)
   apinfo = select_access_point(monitor_interface)
   stop_monitor_mode(monitor_interface)
+  monitor_interface = set_monitor_mode(wifi_id, apinfo.channel)
   return
 
   #TODO: implement...
-  monitor_interface = set_monitor_mode(wifi_id, apinfo.channel)
   test_injection(apinfo)
   open_capture_window(apinfo)
   authenticate_with_ap(apinfo)
