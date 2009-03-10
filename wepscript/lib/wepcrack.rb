@@ -12,6 +12,13 @@ def user_is_root?
   return false
 end
 
+def run_command(cmd)
+  puts "=> #{cmd}"
+  stdin, stdout, stderr = Open3.popen3(cmd)
+  stderr.each_line {}
+  return stdout
+end
+
 def select_from_list(list)
   i = 1
   list.each do |item|
@@ -43,13 +50,6 @@ end
 
 def isbssid?(str)
   return str =~ /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/
-end
-
-def run_command(cmd)
-  puts "=> #{cmd}"
-  stdin, stdout, stderr = Open3.popen3(cmd)
-  stderr.each_line {}
-  return stdout
 end
 
 def select_wifi
@@ -112,11 +112,13 @@ end
 
 def select_access_point(monitor_interface)
   `rm -f wcrb-*`
-  puts "Press enter to start monitoring access points."
+  puts "Press [enter] to start monitoring access points."
   puts "  When done, press Ctrl-C and select AP from list."
   print "> "
   gets
-  system("airodump-ng -w wcrb #{monitor_interface}")
+  cmd = "airodump-ng -w wcrb #{monitor_interface}"
+  puts "=> #{cmd}"
+  system(cmd)
   puts
   aplist = parse_aps('wcrb-01.txt')
   ct = 1
@@ -128,6 +130,27 @@ def select_access_point(monitor_interface)
   return aplist[select_from_list(ap_descs)]
 end
 
+def test_injection(apinfo, monitor_interface)
+  puts "Testing injection for the selected settings"
+  cmd = "aireplay-ng -9 -e #{apinfo.essid} -a #{apinfo.bssid} #{monitor_interface}"
+  puts "=> #{cmd}"
+  system(cmd)
+  puts "If no packets were injected, consider starting over and choosing a different AP."
+  print "Continue? [Y/n] > "
+  if gets.strip =~ /^[nN]/
+    stop_monitor_mode(monitor_interface)
+    return false
+  end
+  return true
+end
+
+def open_capture_window(apinfo, monitor_interface)
+  puts "Opening packet capture in separate window"
+  cmd = "airodump-ng -c #{apinfo.channel} --bssid #{apinfo.bssid} -w wcrb #{monitor_interface}"
+  cmd = "gnome-terminal --geometry 100x25-0+0 --execute #{cmd} &"
+  puts "=> #{cmd}"
+  system(cmd)
+end
 
 def main
   return unless user_is_root?
@@ -137,11 +160,11 @@ def main
   apinfo = select_access_point(monitor_interface)
   stop_monitor_mode(monitor_interface)
   monitor_interface = set_monitor_mode(wifi_id, apinfo.channel)
+  return unless test_injection(apinfo, monitor_interface)
+  open_capture_window(apinfo, monitor_interface)
   return
 
   #TODO: implement...
-  test_injection(apinfo)
-  open_capture_window(apinfo)
   authenticate_with_ap(apinfo)
   inject_packets(apinfo)
   crack_key(apinfo)
